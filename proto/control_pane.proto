@@ -1,0 +1,100 @@
+syntax = "proto3";
+package mivi.controlpane.v1;
+
+// ─── Shared config types ───────────────────────────────────────────────────
+
+message CaptureConfig {
+  uint32 target_fps   = 1;
+  string codec        = 2;  // "h264" | "h265"
+  uint32 bitrate_kbps = 3;
+}
+
+message AiConfig {
+  bool   seg_enabled    = 1;
+  uint32 seg_target_fps = 2;
+}
+
+message StorageConfig {
+  string bucket = 1;
+  string prefix = 2;  // e.g. "exams/exam_123/"
+}
+
+// ─── Requests ─────────────────────────────────────────────────────────────
+
+message StartExamRequest {
+  string        exam_id     = 1;
+  string        patient_id  = 2;
+  string        operator_id = 3;
+  CaptureConfig capture     = 4;
+  AiConfig      ai          = 5;
+  StorageConfig storage     = 6;
+}
+
+message StopExamRequest {
+  string exam_id = 1;
+}
+
+message StartRecordingRequest {
+  string exam_id = 1;
+}
+
+message StopRecordingRequest {
+  string exam_id = 1;
+}
+
+message SetSegmentationRequest {
+  string exam_id = 1;
+  bool   enabled = 2;
+}
+
+message GetStatusRequest {
+  string exam_id = 1;
+}
+
+message GetSystemHealthRequest {}
+
+message GetSystemHealthResponse {
+  // true = Holoscan is reachable and responding to health pings.
+  bool   pipeline_ready   = 1;
+  // Round-trip time of the last UDP health ping in ms. 0 if never received.
+  int64  last_rtt_ms      = 2;
+  // Human-readable reason when pipeline_ready = false.
+  string error            = 3;
+}
+
+// ─── Responses ────────────────────────────────────────────────────────────
+
+message CommandResponse {
+  // true = commande ACKée par Holoscan avec accepted=true
+  bool   accepted     = 1;
+  // UUID pour corrélation logs / events NATS
+  string command_id   = 2;
+  string error_code   = 3;
+  string error_detail = 4;
+}
+
+message StatusResponse {
+  string exam_id             = 1;
+  // "Idle"|"Starting"|"Active"|"Stopping"|"Error"
+  string state               = 2;
+  bool   recording_active    = 3;
+  bool   seg_enabled         = 4;
+  // global à l'instance Holoscan en V1
+  bool   pipeline_healthy    = 5;
+  int64  started_at_ms       = 6;
+  int64  updated_at_ms       = 7;
+  int64  last_health_rtt_ms  = 8;
+  string last_error          = 9;
+}
+
+// ─── Service ──────────────────────────────────────────────────────────────
+
+service ControlPane {
+  rpc StartExam        (StartExamRequest)        returns (CommandResponse);
+  rpc StopExam         (StopExamRequest)         returns (CommandResponse);
+  rpc StartRecording   (StartRecordingRequest)   returns (CommandResponse);
+  rpc StopRecording    (StopRecordingRequest)    returns (CommandResponse);
+  rpc SetSegmentation  (SetSegmentationRequest)  returns (CommandResponse);
+  rpc GetStatus        (GetStatusRequest)        returns (StatusResponse);
+  rpc GetSystemHealth  (GetSystemHealthRequest)  returns (GetSystemHealthResponse);
+}
