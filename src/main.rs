@@ -71,6 +71,26 @@ async fn main() -> anyhow::Result<()> {
         });
     }
 
+    // Heartbeat publisher: emits mivi.controlpane.heartbeat + mivi.holoscan.heartbeat every interval.
+    // Lets the backend detect crashes in < 1 s without polling.
+    {
+        let pub_bg = Arc::clone(&publisher);
+        let holoscan_bg = Arc::clone(&holoscan);
+        let interval = cfg.heartbeat_interval;
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(interval);
+            loop {
+                tick.tick().await;
+                pub_bg.publish(nats::PipelineEvent::ControlPaneHeartbeat).await;
+                pub_bg.publish(nats::PipelineEvent::HoloscanHeartbeat {
+                    healthy: holoscan_bg.is_healthy(),
+                    reason: holoscan_bg.last_health_reason(),
+                    rtt_ms: holoscan_bg.last_rtt_ms(),
+                }).await;
+            }
+        });
+    }
+
     // gRPC service
     let service = ControlPaneService {
         registry,

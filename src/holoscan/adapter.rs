@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -22,6 +22,7 @@ pub struct HoloscanAdapter {
     // Shared health state — global to the Holoscan instance (V1)
     last_rtt_ms: Arc<AtomicU64>,
     pipeline_healthy: Arc<AtomicBool>,
+    last_health_reason: Arc<Mutex<String>>,
     command_timeout: Duration,
 }
 
@@ -50,6 +51,7 @@ impl HoloscanAdapter {
             health_target,
             last_rtt_ms: Arc::new(AtomicU64::new(0)),
             pipeline_healthy: Arc::new(AtomicBool::new(false)),
+            last_health_reason: Arc::new(Mutex::new("initializing".to_string())),
             command_timeout,
         })
     }
@@ -60,11 +62,22 @@ impl HoloscanAdapter {
 
     pub fn last_rtt_ms(&self) -> Option<u64> {
         let v = self.last_rtt_ms.load(Ordering::Relaxed);
-        if v == 0 {
-            None
-        } else {
-            Some(v)
-        }
+        if v == 0 { None } else { Some(v) }
+    }
+
+    pub fn last_health_reason(&self) -> String {
+        self.last_health_reason.lock().unwrap().clone()
+    }
+
+    fn set_healthy(&self, rtt_ms: u64) {
+        self.last_rtt_ms.store(rtt_ms, Ordering::Relaxed);
+        self.pipeline_healthy.store(true, Ordering::Relaxed);
+        *self.last_health_reason.lock().unwrap() = "responding".to_string();
+    }
+
+    fn set_unhealthy(&self, reason: &str) {
+        self.pipeline_healthy.store(false, Ordering::Relaxed);
+        *self.last_health_reason.lock().unwrap() = reason.to_string();
     }
 
     /// Background task: sends ClockSyncRequest every `interval`, marks healthy/unhealthy.
@@ -81,7 +94,7 @@ impl HoloscanAdapter {
 
             if let Err(e) = self.health_socket.send_to(&req, self.health_target).await {
                 warn!(error = %e, "health: UDP send failed");
-                self.pipeline_healthy.store(false, Ordering::Relaxed);
+                self.set_unhealthy("udp_send_failed");
                 continue;
             }
 
@@ -95,25 +108,24 @@ impl HoloscanAdapter {
                 Ok(Ok((n, _addr))) if n == 32 => {
                     if let Some(_resp) = parse_clock_sync_response(&resp_buf) {
                         let rtt = sent_at.elapsed().as_millis() as u64;
-                        self.last_rtt_ms.store(rtt, Ordering::Relaxed);
-                        self.pipeline_healthy.store(true, Ordering::Relaxed);
+                        self.set_healthy(rtt);
                         debug!(rtt_ms = rtt, seq, "health: clock sync OK");
                     } else {
                         warn!("health: invalid clock sync response");
-                        self.pipeline_healthy.store(false, Ordering::Relaxed);
+                        self.set_unhealthy("parse_error");
                     }
                 }
                 Ok(Ok((n, _))) => {
                     warn!(n, "health: unexpected response length");
-                    self.pipeline_healthy.store(false, Ordering::Relaxed);
+                    self.set_unhealthy("parse_error");
                 }
                 Ok(Err(e)) => {
                     warn!(error = %e, "health: UDP recv error");
-                    self.pipeline_healthy.store(false, Ordering::Relaxed);
+                    self.set_unhealthy("udp_recv_error");
                 }
                 Err(_) => {
                     warn!("health: clock sync timeout (>500ms)");
-                    self.pipeline_healthy.store(false, Ordering::Relaxed);
+                    self.set_unhealthy("timeout");
                 }
             }
 

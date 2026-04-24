@@ -58,6 +58,12 @@ pub enum PipelineEvent {
         healthy: bool,
         rtt_ms: Option<u64>,
     },
+    ControlPaneHeartbeat,
+    HoloscanHeartbeat {
+        healthy: bool,
+        reason: String,
+        rtt_ms: Option<u64>,
+    },
     PipelineError {
         exam_id: Option<String>,
         command_id: Option<String>,
@@ -243,6 +249,28 @@ impl PipelineEvent {
                     "command_id": command_id,
                     "ts_ms": ts_ms,
                     "data": { "error_code": error_code, "error_detail": error_detail }
+                }),
+            ),
+
+            PipelineEvent::ControlPaneHeartbeat => (
+                "mivi.controlpane.heartbeat".into(),
+                json!({
+                    "spec_version": "1.0",
+                    "source": "mivi-control-pane",
+                    "event_type": "mivi.controlpane.heartbeat",
+                    "ts_ms": ts_ms,
+                    "data": {}
+                }),
+            ),
+
+            PipelineEvent::HoloscanHeartbeat { healthy, reason, rtt_ms } => (
+                "mivi.holoscan.heartbeat".into(),
+                json!({
+                    "spec_version": "1.0",
+                    "source": "mivi-control-pane",
+                    "event_type": "mivi.holoscan.heartbeat",
+                    "ts_ms": ts_ms,
+                    "data": { "healthy": healthy, "reason": reason, "rtt_ms": rtt_ms }
                 }),
             ),
 
