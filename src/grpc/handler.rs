@@ -93,6 +93,7 @@ impl ControlPane for ControlPaneService {
             "exam_id": exam_id,
             "patient_id": req.patient_id,
             "operator_id": req.operator_id,
+            "expected_patient_id": req.expected_patient_id,
             "seg_enabled": ai.seg_enabled,
             "seg_fps": ai.seg_target_fps,
             "codec": capture.codec,

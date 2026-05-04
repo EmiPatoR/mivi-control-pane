@@ -59,6 +59,12 @@ Transitions that produce NATS events:
 
 > `mivi.exam.completed` is **never** published by the control-pane. It is published exclusively by the Go backend after verifying the MinIO manifest.
 
+> `mivi.machine.patient_detected` is **never** published by the control-pane. It is published directly by Holoscan's `ExamVerificationOp` after OCR reads the patient identifier from the machine screen.
+
+### StopExam timing note
+
+When Holoscan processes the `stop_exam` TCP command it synchronously sends `PipelineStopped` back on the TCP channel. The control-pane handles this ACK, publishes `mivi.pipeline.stopped` to NATS, and **then** returns the gRPC `CommandResponse`. This means `mivi.pipeline.stopped` — and any SSE events it triggers in the backend — arrives at connected clients **before** the HTTP response to the caller that triggered `StopExam`. Client code must not assume the exam status is still unchanged when the gRPC call returns.
+
 ## NATS event envelope
 
 All events share the same JSON envelope:
@@ -83,7 +89,7 @@ Proto file: `proto/control_pane.proto`
 
 | RPC | Request | Response |
 |---|---|---|
-| `StartExam` | `exam_id`, `patient_id`, `operator_id`, `AiConfig`, `StorageConfig`, `CaptureConfig` | `CommandResponse` |
+| `StartExam` | `exam_id`, `patient_id`, `operator_id`, `expected_patient_id`, `AiConfig`, `StorageConfig`, `CaptureConfig` | `CommandResponse` |
 | `StopExam` | `exam_id` | `CommandResponse` |
 | `StartRecording` | `exam_id` | `CommandResponse` |
 | `StopRecording` | `exam_id` | `CommandResponse` |
@@ -93,6 +99,10 @@ Proto file: `proto/control_pane.proto`
 `CommandResponse` fields: `accepted bool`, `command_id string`, `error_code string`, `error_detail string`.
 
 All RPCs are idempotent for the already-in-target-state case (e.g. StopExam on an already-Idle session returns success immediately).
+
+### `expected_patient_id`
+
+`StartExamRequest.expected_patient_id` carries the DICOM PatientID (e.g. `"PAT-12345"`) for the patient the operator selected. The control-pane forwards it verbatim in the `start_exam` TCP command payload to Holoscan, which uses it to gate the `ExamVerificationOp` OCR check. Once OCR detects a matching patient identifier on the machine screen, Holoscan publishes `mivi.machine.patient_detected` directly to NATS — the control-pane does not relay this event.
 
 ### StorageConfig
 
@@ -108,13 +118,13 @@ Holoscan then writes chunks to `{prefix}{exam_id}/{recording_generation}/chunks/
 
 Commands are JSON objects framed with a 4-byte little-endian length prefix.
 
-| `cmd_type` | Description |
-|---|---|
-| `start_exam` | Start the Holoscan pipeline |
-| `stop_exam` | Stop the pipeline and flush MinIO uploads |
-| `start_recording` | Begin writing chunks to MinIO |
-| `stop_recording` | Stop writing chunks |
-| `set_segmentation` | Enable/disable AI segmentation overlay |
+| `cmd_type` | Key fields | Description |
+|---|---|---|
+| `start_exam` | `exam_id`, `expected_patient_id` | Start the Holoscan pipeline; activates ExamVerificationOp |
+| `stop_exam` | `exam_id` | Stop the pipeline and flush MinIO uploads |
+| `start_recording` | `exam_id` | Begin writing chunks to MinIO |
+| `stop_recording` | `exam_id` | Stop writing chunks |
+| `set_segmentation` | `exam_id`, `enabled` | Enable/disable AI segmentation overlay |
 
 Responses: `{ "accepted": true/false, "error_code": "...", "error_detail": "..." }`.
 

@@ -22,12 +22,14 @@ message StorageConfig {
 // ─── Requests ─────────────────────────────────────────────────────────────
 
 message StartExamRequest {
-  string        exam_id     = 1;
-  string        patient_id  = 2;
-  string        operator_id = 3;
-  CaptureConfig capture     = 4;
-  AiConfig      ai          = 5;
-  StorageConfig storage     = 6;
+  string        exam_id              = 1;
+  string        patient_id           = 2;
+  string        operator_id          = 3;
+  CaptureConfig capture              = 4;
+  AiConfig      ai                   = 5;
+  StorageConfig storage              = 6;
+  reserved      7;                         // was expected_accession — removed (OCR reads patient ID, not accession)
+  string        expected_patient_id  = 8;  // DICOM PatientID shown on the machine — OCR gate
 }
 
 message StopExamRequest {
