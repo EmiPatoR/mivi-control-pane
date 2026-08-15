@@ -12,6 +12,11 @@ message CaptureConfig {
 message AiConfig {
   bool   seg_enabled    = 1;
   uint32 seg_target_fps = 2;
+  // Registry code of the segmentation model this exam's protocol resolves to.
+  // Empty = pipeline default (single-model deployments keep working unchanged).
+  string model_code     = 3;
+  // Per-protocol capture crop "x,y,w,h". Empty = machine-profile default.
+  string seg_roi        = 4;
 }
 
 message StorageConfig {

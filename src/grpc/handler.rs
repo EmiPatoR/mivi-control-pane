@@ -96,6 +96,11 @@ impl ControlPane for ControlPaneService {
             "expected_patient_id": req.expected_patient_id,
             "seg_enabled": ai.seg_enabled,
             "seg_fps": ai.seg_target_fps,
+            // Per-protocol model selection, resolved by the backend from its
+            // AI model registry. Empty strings = Holoscan's configured default,
+            // so single-model deployments are unaffected.
+            "model_code": ai.model_code,
+            "seg_roi": ai.seg_roi,
             "codec": capture.codec,
             "bitrate_kbps": capture.bitrate_kbps,
             "target_fps": capture.target_fps,
