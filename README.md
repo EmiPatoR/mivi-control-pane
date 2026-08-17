@@ -100,6 +100,15 @@ Proto file: `proto/control_pane.proto`
 
 All RPCs are idempotent for the already-in-target-state case (e.g. StopExam on an already-Idle session returns success immediately).
 
+### `AiConfig` — per-exam model selection
+
+`AiConfig` carries `model_code` and optional `seg_roi` (`x,y,w,h`) alongside
+the enable flag. The backend resolves both from its AI model registry via the
+exam's protocol; the control-pane forwards them verbatim to Holoscan, which
+activates the matching prebuilt engine and applies the crop for the exam's
+duration. An empty `model_code` runs Holoscan's configured default, so older
+backends keep working unchanged.
+
 ### `expected_patient_id`
 
 `StartExamRequest.expected_patient_id` carries the DICOM PatientID (e.g. `"PAT-12345"`) for the patient the operator selected. The control-pane forwards it verbatim in the `start_exam` TCP command payload to Holoscan, which uses it to gate the `ExamVerificationOp` OCR check. Once OCR detects a matching patient identifier on the machine screen, Holoscan publishes `mivi.machine.patient_detected` directly to NATS — the control-pane does not relay this event.
