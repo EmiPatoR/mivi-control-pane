@@ -62,6 +62,23 @@ async fn main() -> anyhow::Result<()> {
     // Session registry
     let registry = Arc::new(SessionRegistry::new());
 
+    // Terminal-session pruning: without it the registry grew for the life of
+    // the process and a re-used exam_id was ALREADY_EXISTS forever. Hourly
+    // grace keeps just-stopped exams queryable.
+    {
+        let registry_bg = Arc::clone(&registry);
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(std::time::Duration::from_secs(600));
+            loop {
+                tick.tick().await;
+                let pruned = registry_bg.prune_terminal(chrono::Duration::hours(1)).await;
+                if pruned > 0 {
+                    tracing::info!(pruned, "pruned terminal sessions from registry");
+                }
+            }
+        });
+    }
+
     // Background health monitor
     {
         let holoscan_bg = Arc::clone(&holoscan);
@@ -97,6 +114,7 @@ async fn main() -> anyhow::Result<()> {
         holoscan,
         publisher,
         start_exam_timeout: cfg.start_exam_timeout,
+        holoscan_status: Arc::new(Default::default()),
     };
 
     let addr: SocketAddr = format!("0.0.0.0:{}", cfg.grpc_port).parse()?;

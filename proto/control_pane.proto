@@ -35,6 +35,11 @@ message StartExamRequest {
   StorageConfig storage              = 6;
   reserved      7;                         // was expected_accession — removed (OCR reads patient ID, not accession)
   string        expected_patient_id  = 8;  // DICOM PatientID shown on the machine — OCR gate
+  // Where this exam's video/mask/pose streams go: the address the operator's
+  // registered headset last spoke from, resolved per exam by the backend.
+  // Empty = keep the pipeline's --ip launch default, which is what an older
+  // backend (and a manual pipeline run) produces.
+  string        headset_ip           = 9;
 }
 
 message StopExamRequest {
@@ -67,6 +72,11 @@ message GetSystemHealthResponse {
   int64  last_rtt_ms      = 2;
   // Human-readable reason when pipeline_ready = false.
   string error            = 3;
+  // Build versions for the control center's components view. Wire-compatible
+  // additions; holoscan_version is empty until a Holoscan with GetStatus
+  // (MCTR cmd 6) has answered — the feature-detect for old pipelines.
+  string control_pane_version = 4;
+  string holoscan_version     = 5;
 }
 
 // ─── Responses ────────────────────────────────────────────────────────────
@@ -92,6 +102,31 @@ message StatusResponse {
   int64  updated_at_ms       = 7;
   int64  last_health_rtt_ms  = 8;
   string last_error          = 9;
+  // Merged from Holoscan's GetStatus (MCTR cmd 6) when available — all four
+  // stay zero-valued against an old Holoscan. recording_error is the flag
+  // MinIORecorderOp sets on queue overflow, previously surfaced nowhere.
+  bool   machine_verified    = 10;
+  bool   recording_error     = 11;
+  string model_code          = 12;
+  string holoscan_version    = 13;
+}
+
+// ─── ListSessions ─────────────────────────────────────────────────────────
+
+message ListSessionsRequest {}
+
+message SessionInfo {
+  string exam_id            = 1;
+  string state              = 2;
+  bool   recording_active   = 3;
+  bool   seg_enabled        = 4;
+  int64  started_at_ms      = 5;
+  int64  updated_at_ms      = 6;
+  string last_error         = 7;
+}
+
+message ListSessionsResponse {
+  repeated SessionInfo sessions = 1;
 }
 
 // ─── Service ──────────────────────────────────────────────────────────────
@@ -104,4 +139,8 @@ service ControlPane {
   rpc SetSegmentation  (SetSegmentationRequest)  returns (CommandResponse);
   rpc GetStatus        (GetStatusRequest)        returns (StatusResponse);
   rpc GetSystemHealth  (GetSystemHealthRequest)  returns (GetSystemHealthResponse);
+  // The in-memory session registry, for the control center's pipeline debug
+  // view. Sessions live for the process lifetime — this is diagnostic state,
+  // not history (Postgres owns history).
+  rpc ListSessions     (ListSessionsRequest)     returns (ListSessionsResponse);
 }

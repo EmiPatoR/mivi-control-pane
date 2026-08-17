@@ -78,6 +78,10 @@ pub enum CmdType {
     StartRecording = 3,
     StopRecording = 4,
     SetSegmentation = 5,
+    /// Query — Holoscan replies with the standard ACK plus a `status` object
+    /// (see `HoloscanAck::status`). An old Holoscan answers accepted=false
+    /// "unknown command type", which is the feature-detect: no lockstep deploy.
+    GetStatus = 6,
 }
 
 pub fn build_command_header(cmd_type: CmdType, payload_len: u32) -> [u8; 16] {
@@ -102,4 +106,37 @@ pub struct HoloscanAck {
     pub error_code: String,
     #[serde(default)]
     pub error_detail: String,
+    /// Present only on GetStatus (cmd 6) replies.
+    #[serde(default)]
+    pub status: Option<HoloscanStatus>,
+}
+
+/// The `status` object of a GetStatus reply — PipelineControlState plus build
+/// identity, as serialized by BackendControlOp::build_status_ack.
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+pub struct HoloscanStatus {
+    #[serde(default)]
+    pub version: String,
+    #[serde(default)]
+    pub exam_active: bool,
+    #[serde(default)]
+    pub recording_active: bool,
+    #[serde(default)]
+    pub recording_error: bool,
+    #[serde(default)]
+    pub machine_verified: bool,
+    #[serde(default)]
+    pub exam_id: String,
+    #[serde(default)]
+    pub model_code: String,
+    #[serde(default)]
+    pub seg_roi: String,
+    #[serde(default)]
+    pub exam_generation: u64,
+    #[serde(default)]
+    pub recording_generation: u64,
+    /// Stage latencies snapshot — passed through opaque; only the web UI
+    /// renders it.
+    #[serde(default)]
+    pub stats: Option<serde_json::Value>,
 }

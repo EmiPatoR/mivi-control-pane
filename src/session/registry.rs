@@ -88,6 +88,43 @@ impl SessionRegistry {
     pub fn all(&self) -> Vec<Arc<Mutex<ExamSession>>> {
         self.sessions.iter().map(|r| r.value().clone()).collect()
     }
+
+    /// Evicts terminal (Idle/Error) sessions idle longer than `max_idle`.
+    ///
+    /// The registry never evicted anything, so it grew for the life of the
+    /// process and a re-used exam_id answered ALREADY_EXISTS forever. Only
+    /// terminal states are touched, and only after a grace period, so
+    /// anything still consulting a just-stopped exam's status keeps working.
+    pub async fn prune_terminal(&self, max_idle: chrono::Duration) -> usize {
+        let cutoff = chrono::Utc::now() - max_idle;
+
+        // Snapshot the handles first and release every DashMap guard before
+        // awaiting: holding a shard guard across an .await blocks any task
+        // touching that shard — including the gRPC handlers — for as long as
+        // the session mutex is held elsewhere, which is a deadlock waiting
+        // for a slow StartExam to coincide with the sweep.
+        let candidates: Vec<(String, std::sync::Arc<Mutex<ExamSession>>)> = self
+            .sessions
+            .iter()
+            .map(|e| (e.key().clone(), e.value().clone()))
+            .collect();
+
+        let mut stale = Vec::new();
+        for (exam_id, arc) in candidates {
+            let session = arc.lock().await;
+            let terminal = matches!(
+                session.state,
+                super::state::SessionState::Idle | super::state::SessionState::Error
+            );
+            if terminal && session.updated_at < cutoff {
+                stale.push(exam_id);
+            }
+        }
+        for exam_id in &stale {
+            self.sessions.remove(exam_id);
+        }
+        stale.len()
+    }
 }
 
 impl Default for SessionRegistry {

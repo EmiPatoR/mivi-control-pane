@@ -10,7 +10,7 @@ use tracing::{debug, warn};
 use crate::error::AppError;
 use super::protocol::{
     build_clock_sync_request, build_command_header, parse_clock_sync_response, CmdType,
-    HoloscanAck,
+    HoloscanAck, HoloscanStatus,
 };
 
 pub struct HoloscanAdapter {
@@ -131,6 +131,21 @@ impl HoloscanAdapter {
 
             seq = seq.wrapping_add(1);
         }
+    }
+
+    /// Query Holoscan's pipeline state (MCTR cmd 6).
+    ///
+    /// `Ok(None)` means the running Holoscan predates GetStatus (it ACKs
+    /// unknown commands with accepted=false) — callers degrade to the fields
+    /// they already have. `Err` means the transport failed, same as any other
+    /// command.
+    pub async fn query_status(&self, command_id: &str) -> Result<Option<HoloscanStatus>, AppError> {
+        let payload = serde_json::json!({ "command_id": command_id });
+        let ack = self.send_command(CmdType::GetStatus, payload).await?;
+        if !ack.accepted {
+            return Ok(None);
+        }
+        Ok(ack.status)
     }
 
     /// Send a command to Holoscan via TCP 8557.
